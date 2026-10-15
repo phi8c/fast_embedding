@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+progress.db
+progress.db-*
+progress.dryrun.db
+progress.dryrun.db-*
+logs/
+checkpoints/
+.cache/
+hf_cache/
+*.sqlite
+*.sqlite3
