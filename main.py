@@ -275,7 +275,9 @@ def make_clients(cfg: Config) -> tuple[SearchIndexClient, SearchClient]:
 
 
 def azure_type(field: Any) -> str:
-    return str(getattr(field, "type", ""))
+    field_type = getattr(field, "type", "")
+    # SDK 12 returns Enum members; str(member) is not the wire-format EDM type.
+    return str(getattr(field_type, "value", field_type))
 
 
 def preflight(cfg: Config, index_client: SearchIndexClient) -> dict[str, str]:
@@ -293,8 +295,13 @@ def preflight(cfg: Config, index_client: SearchIndexClient) -> dict[str, str]:
         raise RuntimeError(f"Azure embedding dimensions mismatch: index={vector_dims}, config={cfg.dimensions}.")
     if "id" not in fields:
         raise RuntimeError("Azure index must contain key field 'id'.")
-    if not getattr(fields["id"], "key", False) or azure_type(fields["id"]) != "Edm.String":
-        raise RuntimeError("Azure key must be the string field 'id'.")
+    key_type = azure_type(fields["id"])
+    key_flag = getattr(fields["id"], "key", None)
+    if key_flag is not True or key_type != "Edm.String":
+        raise RuntimeError(f"Azure key must be the string field 'id': key={key_flag!r}, type={key_type!r}, raw_type={fields['id'].type!r}.")
+    if azure_type(fields["embedding"]) != "Collection(Edm.Single)":
+        raise RuntimeError(f"Azure embedding must be Collection(Edm.Single), got {azure_type(fields['embedding'])!r}.")
+    logger.info("Azure schema validated: id key=true type=%s, embedding dimensions=%d", key_type, vector_dims)
     if "document_id" not in fields:
         logger.warning("Azure index has no 'document_id' field; only key 'id' will be uploaded.")
     return {name: azure_type(field) for name, field in fields.items()}
@@ -304,7 +311,7 @@ def load_model(cfg: Config) -> BGEM3FlagModel:
     if cfg.cpu_threads:
         torch.set_num_threads(cfg.cpu_threads)
     logger.info("Loading embedding model on CPU: %s", cfg.model_id)
-    return BGEM3FlagModel(cfg.model_id, use_fp16=False, device="cpu")
+    return BGEM3FlagModel(cfg.model_id, use_fp16=False, devices="cpu")
 
 
 def get_tokenizer(model: BGEM3FlagModel) -> Any:
